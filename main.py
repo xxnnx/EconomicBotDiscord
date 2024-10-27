@@ -2,7 +2,6 @@ import disnake
 from disnake.ext import commands
 import datetime
 import os
-
 import sqlite3
 from config import settings
 
@@ -15,15 +14,27 @@ connection = sqlite3.connect('server.db')
 cursor = connection.cursor()
 
 TICKET_CHANNEL_ID = 1299473325327777802
-ROLE_ID = 1261062562833764362
+date = datetime.datetime.today()
+
+@bot.event #Код чтобы бот игнорировал команды которые ему пишут в личные сообщения
+async def on_message(message):
+    # Игнорируем сообщения от бота
+    if message.author == bot.user:
+        return
+        
+    # Проверяем, если сообщение в ЛС
+    if isinstance(message.channel, disnake.DMChannel):
+        await message.channel.send("Я игнорирую команды от других пользователей в ЛС.")
+        return
+
+    # Обрабатываем команды
+    await bot.process_commands(message)
 
 @bot.event
 async def on_ready():
-
     channel = bot.get_channel(1299473325327777802)
     if channel:
         await channel.purge(limit=100)
-
         message = await channel.send("Инициализация команды..")
         ctx = await bot.get_context(message)
 
@@ -59,14 +70,6 @@ async def on_member_join(member):
         connection.commit()
     else:
         pass
-
-if not os.path.exists('ticket_log.txt'):
-    with open('ticket_log.txt', 'w') as log_file:
-        log_file.write("Лог тикетов:\n")
-
-def log_to_file(log_message):
-    with open('ticket_log.txt', 'a') as log_file:
-        log_file.write(f"{datetime.datetime.now()}: {log_message}\n")
 
 @bot.command(aliases = ['balance'])
 async def __balance(ctx, member: disnake.Member = None):
@@ -147,7 +150,6 @@ async def help_listener(inter: disnake.MessageInteraction):
     if inter.component.custom_id == "Нужна помощь?":
         await inter.response.send_message("Contact <@650306540179292160>")
 
-
 @bot.command(aliases = ['leaderboard', 'lb'])
 async def __leaderboard(ctx):
     embed = disnake.Embed(title = 'Топ 10 сервера')
@@ -165,18 +167,10 @@ async def __leaderboard(ctx):
 
 class MyModal(disnake.ui.Modal):
     def __init__(self):
-        # компонтеты окна
         components = [
             disnake.ui.TextInput(
-                label="Ваш ник",
-                placeholder="Введите ваш ник",
-                custom_id="nickname",
-                style=disnake.TextInputStyle.short,
-                max_length=50,
-            ),
-            disnake.ui.TextInput(
                 label="Описание",
-                placeholder="Введите описание проблемы.",
+                placeholder="Что случилось?",
                 custom_id="description",
                 style=disnake.TextInputStyle.paragraph,
             ),
@@ -187,42 +181,32 @@ class MyModal(disnake.ui.Modal):
             components=components,
         )
 
-    async def callback(self, inter: disnake.ModalInteraction): #обработка ответа идет
-        nickname = inter.text_values["nickname"]
+    async def callback(self, inter: disnake.ModalInteraction):
         description = inter.text_values["description"]
-        
-        guild = inter.guild  # Получаем гильдию из взаимодействия
-        
+
+        guild = inter.guild
         overwrites = {
             guild.default_role: disnake.PermissionOverwrite(read_messages=False),
             inter.user: disnake.PermissionOverwrite(read_messages=True)
         }
 
-        channel = await guild.create_text_channel(f'ticket-{inter.user.id}', overwrites=overwrites)
+        channel_name = f'ticket-{inter.user.id}'
+        channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
 
-        embed = disnake.Embed(title="Новый тикет", description=description, color=disnake.Color.blue())
-        embed.add_field(name="Ник", value=nickname)
+        embed = disnake.Embed(title="Ваш тикет", description=description, color=disnake.Color.blue())
         embed.add_field(name="Создан пользователем", value=inter.user.mention)
 
         await channel.send(embed=embed)
+        await channel.send(f'Привет {inter.user.mention}, администратор ответит вам в ближайшее время')
 
-        await channel.send(f'Привет {inter.user.mention}, чем мы можем помочь?')
-        # кнопка закрытия тикета
-        close_button = disnake.ui.Button(label="Закрыть тикет", style=disnake.ButtonStyle.red, custom_id=f'close_ticket-{inter.user.id}')
+        close_button = disnake.ui.Button(label="Закрыть", style=disnake.ButtonStyle.red, custom_id=f'close_ticket-{inter.user.id}')
         close_view = disnake.ui.View()
         close_view.add_item(close_button)
 
         await channel.send("Нажмите кнопку ниже, чтобы закрыть тикет:", view=close_view)
         await inter.response.send_message(f'Тикет создан: {channel.mention}', ephemeral=True)
-
 @bot.command()
 async def ticket(ctx):
-    user_tickets = [channel for channel in ctx.guild.channels if channel.name.startswith(f'ticket-{ctx.author.id}-')]
-
-    if user_tickets:
-        await ctx.send("Вы уже открыли тикет. Пожалуйста, закройте его перед созданием нового.")
-        return
-
     button = disnake.ui.Button(label="Создать тикет", style=disnake.ButtonStyle.primary, custom_id="create_ticket")
     view = disnake.ui.View()
     view.add_item(button)
@@ -230,6 +214,12 @@ async def ticket(ctx):
     await ctx.send("Нажмите кнопку ниже для создания тикета:", view=view)
 
     async def button_callback(interaction):
+        existing_tickets = [channel for channel in interaction.guild.channels if channel.name.startswith(f'ticket-{interaction.user.id}')]
+        
+        if existing_tickets:
+            await interaction.response.send_message("Вы уже открыли тикет. Пожалуйста, закройте его перед созданием нового.", ephemeral=True)
+            return
+        
         modal = MyModal()  # Используем ваш класс MyModal
         await interaction.response.send_modal(modal)
 
@@ -237,20 +227,22 @@ async def ticket(ctx):
 
 @bot.event
 async def on_interaction(interaction):
-    if interaction.data['custom_id'].startswith('close_ticket-'):
-        user_id = interaction.data['custom_id'].split('-')[1]
-        
-        if interaction.user.id == int(user_id) or interaction.user.guild_permissions.manage_channels:
-            channel = interaction.channel
-            await interaction.response.send_message(f'Тикет {channel.mention} закрыт.', ephemeral=True)
-            await channel.delete()
-            log_to_file(f"Тикет закрыт: {channel.name} пользователем {interaction.user.name}")
-        else:
-            await interaction.response.send_message("У вас нет прав на закрытие этого тикета.", ephemeral=True)
+    try:
+        if interaction.data['custom_id'].startswith('close_ticket-'):
+            user_id = interaction.data['custom_id'].split('-')[1]
+            
+            if interaction.user.id == int(user_id) or interaction.user.guild_permissions.manage_channels:
+                channel = interaction.channel
+                await interaction.response.send_message(f'Тикет {channel.mention} закрыт.', ephemeral=True)
+                await channel.delete()
+            else:
+                await interaction.response.send_message("У вас нет прав на закрытие этого тикета.", ephemeral=True)
+    except Exception as e:
+        print(f"Ошибка в on_interaction: {e}")
 
 @bot.command()
 @commands.has_permissions(manage_channels=True)
-async def status(ctx):
+async def status(ctx): #Команда status
     open_tickets = [channel for channel in ctx.guild.channels if channel.name.startswith('ticket-')]
     
     if not open_tickets:
@@ -260,39 +252,81 @@ async def status(ctx):
     status_message = "Открытые тикеты:\n" + "\n".join([f"{channel.mention} - {channel.name}" for channel in open_tickets])
     await ctx.send(status_message)
 
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    if message.channel.name.startswith('ticket-'):
-        admin_channel = disnake.utils.get(message.guild.channels, name='admin-channel')
-        if admin_channel:
-            await admin_channel.send(f'Тикет от {message.author.mention} в канале {message.channel.mention}: {message.content}')
-            log_to_file(f"Сообщение от {message.author.name} в {message.channel.name}: {message.content}")
-
-    await bot.process_commands(message)
-
 @bot.command()
-async def close(ctx, channel: disnake.TextChannel):
+async def close(ctx, channel: disnake.TextChannel): #Команда close
     if ctx.author.id == int(channel.name.split('-')[1]) or ctx.author.guild_permissions.manage_channels:
         await channel.delete()
         await ctx.send(f'Тикет {channel.mention} закрыт.')
-        log_to_file(f"Тикет закрыт: {channel.name} пользователем {ctx.author.name}")
     else:
         await ctx.send("У вас нет прав на закрытие этого тикета.")
 
-@close.error
+@close.error #Сообщения о том что у человека нет прав для исп. команнды close
 async def close_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("У вас нет прав для закрытия тикетов.")
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Пожалуйста, укажите корректный канал.")
 
-
-@status.error
+@status.error #Сообщения о том что у человека нет прав для исп. команнды status
 async def status_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("У вас нет прав для просмотра тикетов.")
+
+roles_shop = {
+    "VIPочка": {"cost": 10000, "role_id": 1300142132576784506}
+}
+
+@bot.command()
+async def shop(ctx):
+    embed = disnake.Embed(title="Магазин ролей", description="Доступные роли для покупки")
+    print('[',date,']','Открыт магазин')
+    
+    for role_name, role_info in roles_shop.items():
+        embed.add_field(
+            name=role_name,
+            value=f"Цена: {role_info['cost']} :leaves:",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def buy(ctx, role_name: str = None):
+    if role_name is None:
+        await ctx.send(f"**{ctx.author}**, укажите название роли, которую хотите купить. Используйте команду `!shop` для просмотра доступных ролей.")
+        print('[',date,']','При вызове команды buy не написали название роли')
+        return
+    
+    # Проверка, существует ли указанная роль в магазине
+    if role_name not in roles_shop:
+        await ctx.send(f"**{ctx.author}**, роль '{role_name}' не найдена в магазине. Проверьте название.")
+        print('[',date,']','Роль не куплена, не найдена в магазине')
+        return
+
+    role_info = roles_shop[role_name]
+    role_cost = role_info["cost"]
+    role_id = role_info["role_id"]
+
+    # Проверка баланса пользователя
+    user_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (ctx.author.id,)).fetchone()
+    if user_balance is None or user_balance[0] < role_cost:
+        await ctx.send(f"**{ctx.author}**, у вас недостаточно :leaves: для покупки роли '{role_name}'.")
+        print('[',date,']','Роль не куплена, нехватает листиков')
+        return
+
+    # Проверка, есть ли у пользователя уже эта роль
+    role = ctx.guild.get_role(role_id)
+    if role in ctx.author.roles:
+        await ctx.send(f"**{ctx.author}**, у вас уже есть роль '{role_name}'.")
+        print('[',date,']','Роль не куплена, у пользователя уже есть эта роль')
+        return
+
+    # Списание средств и выдача роли
+    cursor.execute("UPDATE users SET cash = cash - ? WHERE id = ?", (role_cost, ctx.author.id))
+    connection.commit()
+    await ctx.author.add_roles(role)
+    
+    await ctx.send(f"**{ctx.author}**, вы успешно купили роль '{role_name}' за {role_cost} :leaves:!")
+    print('[',date,']','Роль куплена')
 
 bot.run(settings['token'])
