@@ -8,15 +8,15 @@
 ## Commands available in the bot:
 ### > ___Economic the commands:___
 
-_!adward <user_nickname> <amount> - Give an award to the user_
+!adward <user_nickname> <amount> - _Give an award to the user_
 
-_!deprive <user_nick> <amount> - Select any amount of currency_
+!deprive <user_nick> <amount> - _Select any amount of currency_
 
-_!balance - View the balance of any user_
+!balance - _View the balance of any user_
 
-_!leaderboard - View the top 10 servers by balance_
+!leaderboard - _View the top 10 servers by balance_
 
-_!help - Use the commands that are in the bot_
+!help - _Use the commands that are in the bot_
 
 
 ### > ___Ticket the commands:___
