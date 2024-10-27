@@ -1,2 +1,1 @@
-"For "ticket_log.txt" you need to add a channel to your Discord server named "admin-channel". 
-And in the code replace my channel ID with yours" 
+Hello, I created an economic bot for discord north. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets.
