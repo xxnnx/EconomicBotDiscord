@@ -20,11 +20,11 @@
 
 
 ### > ___Ticket the commands:___
-_!ticket - Creating a window for users so that they can create a ticket using a button_
+!ticket - _Creating a window for users so that they can create a ticket using a button_
 
-_!close <#ID Channel> - In general, the !close command is integrated into every ticket that will be created by the user (only the administrator and the ticket creator can close using this button and command), but using this command you can manually close any ticket_
+!close <#ID Channel> - _In general, the !close command is integrated into every ticket that will be created by the user (only the administrator and the ticket creator can close using this button and command), but using this command you can manually close any ticket_
 
-_!status - look at how many open tickets there are_
+!status - _look at how many open tickets there are_
 
 > [!NOTE]
 > New commands added:
