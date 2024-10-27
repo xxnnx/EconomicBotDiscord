@@ -1,9 +1,9 @@
 # Economic Discord Bot
 
-## **Hello**, I created an economic bot for discord north. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets. :shipit:
+## **Hello**, I created an economic bot for discord north. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets.
 
 > [!TIP]
-> To create a new database. Just delete mine. Launching the bot via "start.bat"
+> To create a new database. Just delete mine. Launching the bot via "start.bat" :shipit:
 
 ## Commands available in the bot:
 ### > ___Economic the commands:___
