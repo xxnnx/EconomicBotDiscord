@@ -1,6 +1,6 @@
 # Economic Discord Bot
 
-# **Hello**, I created an economic bot for discord server. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets
+### **Hello**, I created an economic bot for discord server. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets
 
 > [!WARNING]
 > In order for the bot to send open tickets to the ticket chat, you need to create a chat and insert the channel ID
