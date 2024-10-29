@@ -37,7 +37,7 @@ async def on_message(message):
 
 @bot.event
 async def on_ready():
-    channel = bot.get_channel(1299473325327777802)
+    channel = bot.get_channel(1299473325327777802) #ID канала куда бот будет присылать кнопку для создания тикета
     if channel:
         await channel.purge(limit=100)
         message = await channel.send("Инициализация команды..")
