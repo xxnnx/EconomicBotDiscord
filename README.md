@@ -35,5 +35,4 @@
 
 > [!NOTE]
 > What's new in update 0.02v
-
 > Added creation of Embed in the channel where tickets will appear. The accept button is automatically removed after the ticket is accepted
