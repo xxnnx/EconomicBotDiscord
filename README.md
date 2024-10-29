@@ -18,6 +18,10 @@
 
 !help - _Use the commands that are in the bot_
 
+!shop - _Open a store with current roles_
+
+!buy <name_role> - _Buy the specified role from the store_
+
 
 ### > ___Ticket the commands:___
 !ticket - _Creating a window for users so that they can create a ticket using a button_
@@ -27,6 +31,5 @@
 !status - _look at how many open tickets there are_
 
 > [!NOTE]
-> New commands added:
-> !shop and !buy
-> Also, when using these commands with different conditions, errors are displayed in the console. Also, for each error, the time at which it occurred is shown. Over time, with each command in the code the error and its time will be shown
+> What's new in update 0.02v
+> Added creation of Embed in the channel where tickets will appear. The accept button is automatically removed after the ticket is accepted
