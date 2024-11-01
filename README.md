@@ -1,4 +1,5 @@
 # Economic Discord Bot
+# Банкирный крот 
 
 ### **Hello**, I created an economic bot for discord server. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets
 
@@ -13,7 +14,7 @@
 
 !help - _Use the commands that are in the bot_
 
-!adward <user_nickname> <amount> - _Give an award to the user_
+!award <user_nickname> <amount> - _Give an award to the user_
 
 !deprive <user_nick> <amount> - _Select any amount of currency_
 
