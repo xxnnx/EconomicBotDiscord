@@ -35,5 +35,5 @@
 !status - _look at how many open tickets there are_
 
 > [!NOTE]
-> What's new in update 0.02v
-> Added creation of Embed in the channel where tickets will appear. The accept button is automatically removed after the ticket is accepted
+> What's new in update 0.03v
+> For the !balance command, an image with balance information is created. Under the balance, interactive buttons have been created to go to the store and transfer currency to another user
