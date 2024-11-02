@@ -110,6 +110,7 @@ async def reward_voice_chat_users():
 
     print(f"[{current_time}] Начислены листики за голосовой чат")
 
+#Код кнопки просмотра баланса
 @bot.command(aliases=['balance'])
 async def __balance(ctx, member: disnake.Member = None):
     if member is None:
@@ -138,7 +139,6 @@ async def __balance(ctx, member: disnake.Member = None):
     img = Image.new("RGB", (width, height), color=background_color)
     draw = ImageDraw.Draw(img)
 
-    # Задаем шрифт
     try:
         font = ImageFont.truetype('arial.ttf', 20)
     except IOError:
@@ -157,26 +157,32 @@ async def __balance(ctx, member: disnake.Member = None):
     img.save(buffer, format="PNG")
     buffer.seek(0)
 
-    # Создаем кнопки для магазина и перевода
     button_shop = Button(label="Открыть магазин", style=disnake.ButtonStyle.green)
     button_transfer = Button(label="Перевод", style=disnake.ButtonStyle.blurple)
 
     # Обработчик кнопки "Открыть магазин"
-    async def button_shop_callback(interaction: disnake.MessageInteraction):
-        await show_shop(interaction)  # Вызываем функцию show_shop
-
-    # Привязываем обработчик к кнопке магазина
-    button_shop.callback = button_shop_callback
+    def create_button_shop_callback(author_id):
+        async def button_shop_callback(interaction: disnake.MessageInteraction):
+            if interaction.user.id != author_id:
+                await interaction.response.send_message("Вы не можете использовать эту кнопку.", ephemeral=True)
+                return
+            await show_shop(interaction)
+        return button_shop_callback
 
     # Обработчик кнопки "Перевод"
-    async def button_transfer_callback(interaction: disnake.MessageInteraction):
-        # Удаляем сообщение с изображением и кнопками
-        await interaction.message.delete()
-        # Открываем меню перевода
-        await open_transfer_menu(interaction)
+    def create_button_transfer_callback(author_id):
+        async def button_transfer_callback(interaction: disnake.MessageInteraction):
+            if interaction.user.id != author_id:
+                await interaction.response.send_message("Вы не можете использовать эту кнопку.", ephemeral=True)
+                return
+            # Удаляем сообщение с изображением и кнопками
+            await interaction.message.delete()
+            # Открываем меню перевода
+            await open_transfer_menu(interaction)
+        return button_transfer_callback
 
-    # Привязываем обработчик к кнопке перевода
-    button_transfer.callback = button_transfer_callback
+    button_shop.callback = create_button_shop_callback(ctx.author.id)
+    button_transfer.callback = create_button_transfer_callback(ctx.author.id)
 
     # Добавляем кнопки в представление и отправляем изображение
     view = View()
@@ -502,9 +508,10 @@ async def ticket(ctx): # Создание текста и запуск созд�
 
 @tasks.loop(minutes=4)
 async def refresh_ticket_button(): # Каждый 4 минут обновление кнопки
+    current_time = datetime.datetime.now()
     global last_message
     if last_message:
-        print('[',date,']',"Обновляем кнопку в сообщении")
+        print(f"[{current_time}] Обновляем кнопку в сообщении")
         new_view = create_ticket_view()
         await last_message.edit(view=new_view)  # Обновляем только кнопку
 
