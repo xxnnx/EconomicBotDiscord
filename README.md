@@ -36,4 +36,4 @@
 
 > [!NOTE]
 > What's new in update 0.03v
-> For the !balance command, an image with balance information is created. Under the balance, interactive buttons have been created to go to the store and transfer currency to another user
+> For the !balance command, an image with balance information is created. Under the balance, interactive buttons have been created to go to the store and transfer currency to another user. Accrual of lists for the fact that the user is in the voice channel
