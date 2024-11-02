@@ -1,5 +1,10 @@
 import disnake
 from disnake.ext import commands, tasks
+from disnake.ui import Button, View, Select, Modal, TextInput
+from PIL import Image, ImageDraw, ImageFont
+from pilmoji import Pilmoji
+import io
+import requests
 import datetime
 import time
 import os
@@ -11,8 +16,16 @@ intents = disnake.Intents.all()
 bot = commands.Bot(command_prefix = settings['prefix'], intents = intents)
 bot.remove_command('help')
 
+
 connection = sqlite3.connect('server.db')
 cursor = connection.cursor()
+
+# Словарь для хранения времени нахождения пользователя в голосовом чате
+voice_time_tracking = {}
+# Частота начислений в минутах
+reward_interval_minutes = 5
+# Награда за интервал (в листиках)
+reward_per_interval = 10
 
 TICKET_CHANNEL_ID = 1299473325327777802
 ticket_admin_messages = {}
@@ -37,6 +50,10 @@ async def on_message(message):
 
 @bot.event
 async def on_ready():
+    if not reward_voice_chat_users.is_running():
+        reward_voice_chat_users.start()
+    print('Bot connected and voice reward system initialized')
+
     channel = bot.get_channel(1299473325327777802) #ID канала куда бот будет присылать кнопку для создания тикета
     if channel:
         await channel.purge(limit=100)
@@ -65,8 +82,7 @@ async def on_ready():
                 pass
 
     connection.commit()
-    await bot.change_presence(status = disnake.Status.dnd, activity = disnake.Activity(name = f'!help 👨‍⚖️', type = disnake.ActivityType.playing))
-    print('Bot connected')
+    await bot.change_presence(activity = disnake.Activity(name = f'!help 👨‍⚖️', type = disnake.ActivityType.playing))
 
 @bot.event
 async def on_member_join(member):
@@ -76,20 +92,181 @@ async def on_member_join(member):
     else:
         pass
 
-@bot.command(aliases = ['balance'])
+@tasks.loop(minutes=reward_interval_minutes)
+async def reward_voice_chat_users():
+    current_time = datetime.datetime.now()
+
+    for guild in bot.guilds:
+        for channel in guild.voice_channels:
+            for member in channel.members:
+                if member.id in voice_time_tracking:
+                    voice_time_tracking[member.id] += reward_interval_minutes
+                else:
+                    voice_time_tracking[member.id] = reward_interval_minutes
+                
+                if voice_time_tracking[member.id] >= reward_interval_minutes:
+                    cursor.execute("UPDATE users SET cash = cash + ? WHERE id = ?", (reward_per_interval, member.id))
+                    connection.commit()
+
+    print(f"[{current_time}] Начислены листики за голосовой чат")
+
+@bot.command(aliases=['balance'])
 async def __balance(ctx, member: disnake.Member = None):
     if member is None:
-        await ctx.send(embed = disnake.Embed(
-            description = f"""Баланс пользователя **{ctx.author}** 
+        member = ctx.author
 
-            :leaves: **{cursor.execute("SELECT cash FROM users WHERE id = {}".format(ctx.author.id)).fetchone()[0]} :leaves:**"""
-        ))
-    else:
-        await ctx.send(embed = disnake.Embed(
-            description = f"""Баланс пользователя **{member}:** 
+    # Получаем данные пользователя
+    user_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (member.id,)).fetchone()[0]
+    user_name = str(member)
 
-            :leaves: **{cursor.execute("SELECT cash FROM users WHERE id = {}".format(member.id)).fetchone()[0]} :leaves:**"""
-        ))
+    # Получаем аватарку пользователя
+    avatar_bytes = await member.avatar.read()
+    avatar_image = Image.open(io.BytesIO(avatar_bytes))
+    avatar_image = avatar_image.resize((100, 100))
+
+    # Создаем маску для круглой аватарки
+    mask = Image.new("L", (100, 100), 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.ellipse((0, 0, 100, 100), fill=255)
+    avatar_image = avatar_image.convert("RGBA")
+    avatar_image.putalpha(mask)
+
+    # Создаем основное изображение
+    width, height = 400, 200
+    background_color = (30, 30, 30)
+    text_color = (255, 255, 255)
+    img = Image.new("RGB", (width, height), color=background_color)
+    draw = ImageDraw.Draw(img)
+
+    # Задаем шрифт
+    try:
+        font = ImageFont.truetype('arial.ttf', 20)
+    except IOError:
+        font = ImageFont.load_default()
+
+    # Вставляем круглую аватарку и текст
+    img.paste(avatar_image, (20, 55), avatar_image)
+    text_balance = f"Баланс: {user_balance} 🍃"
+    text_user = f"Пользователь: {user_name}"
+    with Pilmoji(img) as pilmoji:
+        pilmoji.text((150, 55), text_user, fill=text_color, font=font)
+        pilmoji.text((150, 130), text_balance, fill=text_color, font=font)
+
+    # Сохраняем изображение в байтовый поток
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    # Создаем кнопки для магазина и перевода
+    button_shop = Button(label="Открыть магазин", style=disnake.ButtonStyle.green)
+    button_transfer = Button(label="Перевод", style=disnake.ButtonStyle.blurple)
+
+    # Обработчик кнопки "Открыть магазин"
+    async def button_shop_callback(interaction: disnake.MessageInteraction):
+        await show_shop(interaction)  # Вызываем функцию show_shop
+
+    # Привязываем обработчик к кнопке магазина
+    button_shop.callback = button_shop_callback
+
+    # Обработчик кнопки "Перевод"
+    async def button_transfer_callback(interaction: disnake.MessageInteraction):
+        # Удаляем сообщение с изображением и кнопками
+        await interaction.message.delete()
+        # Открываем меню перевода
+        await open_transfer_menu(interaction)
+
+    # Привязываем обработчик к кнопке перевода
+    button_transfer.callback = button_transfer_callback
+
+    # Добавляем кнопки в представление и отправляем изображение
+    view = View()
+    view.add_item(button_shop)
+    view.add_item(button_transfer)
+    await ctx.send(file=disnake.File(buffer, "balance.png"), view=view)
+
+# Функция для открытия меню перевода
+async def open_transfer_menu(interaction):
+    # Проверяем баланс пользователя
+    sender_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (interaction.user.id,)).fetchone()[0]
+    if sender_balance <= 0:
+        await interaction.response.send_message("Недостаточно средств для перевода.", ephemeral=True)
+        return
+
+    # Получаем список пользователей сервера (до 25 пользователей)
+    members = [member for member in interaction.guild.members if not member.bot]
+    if len(members) > 25:
+        members = members[:25]  # Ограничиваем до 25
+
+    # Создаем выпадающее меню с пользователями сервера
+    select_menu = Select(
+        placeholder="Выберите пользователя для перевода",
+        options=[
+            disnake.SelectOption(label=member.display_name, value=str(member.id))
+            for member in members
+        ]
+    )
+
+    async def select_callback(interaction):
+        selected_user_id = int(select_menu.values[0])
+        await interaction.message.delete()
+        await request_transfer_amount(interaction, selected_user_id)
+
+    select_menu.callback = select_callback
+
+    view = View()
+    view.add_item(select_menu)
+    await interaction.response.send_message("Выберите пользователя для перевода:", view=view)
+
+# Функция для запроса суммы перевода
+async def request_transfer_amount(interaction, selected_user_id):
+    # Создаем модальное окно для ввода суммы
+    class TransferModal(Modal):
+        def __init__(self):
+            # Создаем поле для ввода суммы перевода с уникальным `custom_id`
+            amount_input = TextInput(
+                label="Сумма", 
+                placeholder="Введите сумму", 
+                required=True, 
+                max_length=10, 
+                custom_id="transfer_amount_input"
+            )
+            super().__init__(title="Введите сумму перевода", components=[amount_input])
+            self.amount_input = amount_input
+
+        async def callback(self, interaction):
+            # Используем interaction.text_values для получения значения
+            transfer_amount_str = interaction.text_values["transfer_amount_input"]
+            if transfer_amount_str.isdigit():
+                transfer_amount = int(transfer_amount_str)
+                
+                # Проверка баланса отправителя перед переводом
+                sender_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (interaction.user.id,)).fetchone()[0]
+                if sender_balance < transfer_amount:
+                    await interaction.response.send_message("Недостаточно средств для перевода.", ephemeral=True)
+                    return
+                
+                # Логика перевода (обновление базы данных)
+                cursor.execute("UPDATE users SET cash = cash - ? WHERE id = ?", (transfer_amount, interaction.user.id))
+                cursor.execute("UPDATE users SET cash = cash + ? WHERE id = ?", (transfer_amount, selected_user_id))
+                await interaction.response.send_message(f"Переведено {transfer_amount} 🍃 пользователю <@{selected_user_id}>")
+            else:
+                await interaction.response.send_message("Введите корректную сумму для перевода.", ephemeral=True)
+
+    modal = TransferModal()
+    await interaction.response.send_modal(modal)
+
+# Функция для отображения магазина
+async def show_shop(interaction):
+    embed = disnake.Embed(title="Магазин ролей", description="Доступные роли для покупки")
+    
+    for role_name, role_info in roles_shop.items():
+        embed.add_field(
+            name=role_name,
+            value=f"Цена: {role_info['cost']} 🍃",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
 
 @bot.command(aliases = ['award'])
 async def __award(ctx, member: disnake.Member = None, amount: int = None):
@@ -171,7 +348,7 @@ async def help_listener(inter: disnake.MessageInteraction):
         await inter.response.send_message("Contact <@650306540179292160>")
 
 roles_shop = {
-    "VIPочка": {"cost": 10000, "role_id": 1300142132576784506}
+    "сок-rich": {"cost": 1000, "role_id": 1300142132576784506}
 }
 
 @bot.command()
