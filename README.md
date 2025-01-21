@@ -34,6 +34,7 @@
 ![image](https://github.com/user-attachments/assets/a117696e-67e8-4250-92aa-e8f9f9c9796b)
 
 !close <#ID Channel> - _Нужна чтобы принудительно закрыть тикет, но у админа и у человека который создал тикет есть кнопка Закрытия тикета_
+
 ![image](https://github.com/user-attachments/assets/11495c0e-5143-4cb1-9035-6dae1a327b4b)
 
 !status - _Посмотреть открытые тикеты_
