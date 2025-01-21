@@ -1,38 +1,39 @@
-# Economic Discord Bot (Банкирный крот)
+# Банкирный крот ( Economic Discord Bot )
 
-### I created an economic bot for discord server. With it, you can make a role store, issue money, and view the leaderboard by currency. You can also build support for your server using tickets
-
-> [!WARNING]
-> In order for the bot to send open tickets to the ticket chat, you need to create a chat and insert the channel ID
+### Я создал экономического бота, с помощью которого вы можете отслеживать переводы, открывать баланс, использовать магазин и передовать вашу валюту между пользователями. Так же за то что пользователь сидит в войс чате, будет награда (она настраиваете в коде бота)
 
 > [!TIP]
-> To create a new database. Just delete mine. Launching the bot via "start.bat" :shipit:
+> Для того, чтобы бот отправлял открытые тикеты в чат тикетов (канал где будут все тикеты, "для админов"), вам нужно создать чат и ввести идентификатор канала в код бота
 
-## Commands available in the bot:
-### > ___Economic the commands:___
+> [!TIP]
+> Чтобы создать новую базу данных. Просто удалите мою. Запускаем бота через "start.bat" :shipit:
 
-!help - _Use the commands that are in the bot_
+> [!NOTE]
+> Что нового в обновлении 0.03v
+> Для команды !balance создается аватар пользователя с информацией о балансе. Под балансом созданы интерактивные кнопки для перехода в магазин и перевода валюты другому пользователю. Начисление листиков за то, что пользователь находится в голосовом канале, Добавил ограничений в условия, кнопка в !балансом может воспользоваться только тот, кто его вызвал. Для того чтобы кнопка для создания тикета всегда работала, принял решения обновлять эту кнопку через бота (можно отследить в консоли, каждые 2-4 минуты в консоли пишется, что кнопка обновилась)
 
-!award <user_nickname> <amount> - _Give an award to the user_
+## Команды которые поддерживает бот:
 
-!deprive <user_nick> <amount> - _Select any amount of currency_
+!help - _Помощь по боту_
 
-!balance - _View the balance of any user_
+!award <user_nickname> <amount> - _Выдать пользователю валюту_
 
-!leaderboard - _View the top 10 servers by balance_
+!deprive <user_nick> <amount> - _Забрать валюту у пользователя_
 
-!shop - _Open a store with current roles_
+!balance - _Посмотреть свой баланс_
 
-!buy <name_role> - _Buy the specified role from the store_
+!balance @ник - _Посмотреть баланс пользователя_
+
+!leaderboard - _Посмотерть топ 10 сервера по балансу_
+
+!shop - _Открыть магазин-ролей_
+
+!buy <name_role> - _Купить роль на сервере_
 
 ### > ___Ticket the commands:___
 
-!ticket - _Creating a window for users so that they can create a ticket using a button_
+!ticket - _Нужна для создания сообщения, через которое человек может создать тикет_
 
-!close <#ID Channel> - _In general, the !close command is integrated into every ticket that will be created by the user (only the administrator and the ticket creator can close using this button and command), but using this command you can manually close any ticket_
+!close <#ID Channel> - _Нужна чтобы принудительно закрыть тикет, но у админа и у человека который создал тикет есть кнопка Закрытия тикета_
 
-!status - _look at how many open tickets there are_
-
-> [!NOTE]
-> What's new in update 0.03v
-> For the !balance command, an image with balance information is created. Under the balance, interactive buttons have been created to go to the store and transfer currency to another user. Accrual of lists for the fact that the user is in the voice channel Added restrictions in conditions, the button in !balance can only be used by the person who called it
+!status - _Посмотреть открытые тикеты_
