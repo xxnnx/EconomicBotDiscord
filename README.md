@@ -8,12 +8,26 @@
 2. Установить библиотеки:
    ```
     pip install PyNaCl
+   ```
+   ```
     pip install pynacl pyaudio speechrecognition
+   ```
+   ```
     pip install dysnake
+   ```
+   ```
     pip install pilmoji
+   ```
+   ```
     pip install colorama
+   ```
+   ```
     pip install numpy
+   ```
+   ```
     pip install disnake SpeechRecognition pyaudio
+   ```
+   ```
     pip install gTTS
    ```
    
