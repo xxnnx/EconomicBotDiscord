@@ -1,11 +1,17 @@
 import disnake
 from disnake.ext import commands, tasks
 from disnake.ui import Button, View, Select, Modal, TextInput
+
+from gtts import gTTS
+import asyncio
+
 from PIL import Image, ImageDraw, ImageFont
 from pilmoji import Pilmoji
+
 import io
 import requests
 import datetime
+from colorama import init, Fore
 import time
 import os
 import sqlite3
@@ -15,7 +21,6 @@ intents = disnake.Intents.all()
 
 bot = commands.Bot(command_prefix = settings['prefix'], intents = intents)
 bot.remove_command('help')
-
 
 connection = sqlite3.connect('server.db')
 cursor = connection.cursor()
@@ -28,11 +33,25 @@ reward_interval_minutes = 5
 reward_per_interval = 10
 
 TICKET_CHANNEL_ID = 1299473325327777802
+VOICE_CHANNEL_ID = 1331730513563615322
 ticket_admin_messages = {}
 date = datetime.datetime.now().time()
 
 last_ctx = None
 last_message = None
+
+init(autoreset=True)
+
+class bcolors:
+    HEADER = Fore.MAGENTA
+    OKBLUE = Fore.BLUE
+    OKCYAN = Fore.CYAN
+    OKGREEN = Fore.GREEN
+    WARNING = Fore.YELLOW
+    FAIL = Fore.RED
+    ENDC = Fore.RESET
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 @bot.event #Код чтобы бот игнорировал команды которые ему пишут в личные сообщения
 async def on_message(message):
@@ -52,9 +71,30 @@ async def on_message(message):
 async def on_ready():
     if not reward_voice_chat_users.is_running():
         reward_voice_chat_users.start()
-    print('Bot connected and voice reward system initialized')
+    print()
+    print('     ' + bcolors.OKCYAN + '=================================================' + bcolors.ENDC)
+    print()
+    print('     ' + bcolors.BOLD + 'Bot connected and voice reward system initialized' + bcolors.ENDC)
+    print()
+    print('     ' + bcolors.OKCYAN + '=================================================' + bcolors.ENDC)
+    print()
 
-    channel = bot.get_channel(1299473325327777802) #ID канала куда бот будет присылать кнопку для создания тикета
+    # Подключение к голосовому каналу
+    guild = bot.get_guild(667378391229530123)  # ID сервера
+    voice_channel = guild.get_channel(1331730513563615322)  # ID голосового канала
+
+    if voice_channel:
+        # Присоединение к голосовому каналу
+        await voice_channel.connect()
+        current_time = datetime.datetime.now()
+        print()
+        print(f"{bcolors.HEADER} >>> Бот подключился к каналу: \"{voice_channel.name}\"{bcolors.ENDC}")
+        print()
+    else:
+        print("Не удалось найти голосовой канал")
+
+    # Работа с тикет-каналом
+    channel = bot.get_channel(TICKET_CHANNEL_ID)  #ID канала куда бот будет присылать кнопку для создания тикета
     if channel:
         await channel.purge(limit=100)
         message = await channel.send("Инициализация команды..")
@@ -82,7 +122,7 @@ async def on_ready():
                 pass
 
     connection.commit()
-    await bot.change_presence(activity = disnake.Activity(name = f'!help 👨‍⚖️', type = disnake.ActivityType.playing))
+    await bot.change_presence(activity = disnake.Activity(name = f'!help 👨‍⚖️', type = disnake.ActivityType.listening))
 
 @bot.event
 async def on_member_join(member):
@@ -116,21 +156,27 @@ async def __balance(ctx, member: disnake.Member = None):
     if member is None:
         member = ctx.author
 
+    # Проверка на наличие аватара у пользователя
+    if member.avatar is not None:
+        avatar_bytes = await member.avatar.read()
+        avatar_image = Image.open(io.BytesIO(avatar_bytes))
+        avatar_image = avatar_image.resize((100, 100))
+
+        # Создаем маску для круглой аватарки
+        mask = Image.new("L", (100, 100), 0)
+        draw_mask = ImageDraw.Draw(mask)
+        draw_mask.ellipse((0, 0, 100, 100), fill=255)
+        avatar_image = avatar_image.convert("RGBA")
+        avatar_image.putalpha(mask)
+    else:
+        # Загрузка стандартного изображения, если аватара нет
+        avatar_image = Image.new("RGBA", (100, 100), (100, 100, 100, 255))
+        draw = ImageDraw.Draw(avatar_image)
+        draw.text((10, 40), "No Avatar", fill=(255, 255, 255))
+
     # Получаем данные пользователя
     user_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (member.id,)).fetchone()[0]
     user_name = str(member)
-
-    # Получаем аватарку пользователя
-    avatar_bytes = await member.avatar.read()
-    avatar_image = Image.open(io.BytesIO(avatar_bytes))
-    avatar_image = avatar_image.resize((100, 100))
-
-    # Создаем маску для круглой аватарки
-    mask = Image.new("L", (100, 100), 0)
-    draw_mask = ImageDraw.Draw(mask)
-    draw_mask.ellipse((0, 0, 100, 100), fill=255)
-    avatar_image = avatar_image.convert("RGBA")
-    avatar_image.putalpha(mask)
 
     # Создаем основное изображение
     width, height = 400, 200
@@ -192,6 +238,8 @@ async def __balance(ctx, member: disnake.Member = None):
 
 # Функция для открытия меню перевода
 async def open_transfer_menu(interaction):
+    author_id = interaction.user.id  # Сохраняем ID автора
+
     # Проверяем баланс пользователя
     sender_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (interaction.user.id,)).fetchone()[0]
     if sender_balance <= 0:
@@ -213,6 +261,11 @@ async def open_transfer_menu(interaction):
     )
 
     async def select_callback(interaction):
+        # Проверяем, что взаимодействует только автор команды
+        if interaction.user.id != author_id:
+            await interaction.response.send_message("Вы не можете использовать это меню.", ephemeral=True)
+            return
+
         selected_user_id = int(select_menu.values[0])
         await interaction.message.delete()
         await request_transfer_amount(interaction, selected_user_id)
@@ -324,43 +377,74 @@ async def __leaderboard(ctx):
 
     await ctx.send(embed = embed)
 
-@bot.command(pass_context = True)
+@bot.command(pass_context=True)
 async def help(ctx):
-    emb = disnake.Embed(title = '**Навигация по командам сервера** :leaves:', color = 0x95a5a6)
-    emb.set_author(name = bot.user.name, icon_url = bot.user.avatar)
+    emb = disnake.Embed(title='**Навигация по командам сервера** :leaves:', color=0x95a5a6)
+    emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
 
-    emb.add_field(name = '**!balance**', value = 'Проверить баланс любого пользователя')
-    emb.add_field(name = '**!award**', value = 'Выдать награждение пользователю')
-    emb.add_field(name = '**!deprive**', value = 'Отобрать любое количество валюты') 
-    emb.add_field(name = '**!leaderboard**', value = 'Посмотерть топ 10 сервера по балансу')
-    emb.add_field(name = '**Ticket**', value = 'Вы так же можете открыть тикет в чате <#1299473325327777802>')
-    emb.set_footer(text = "мяу")
+    emb.add_field(name='**!balance**', value='Проверить баланс любого пользователя')
+    emb.add_field(name='**!award**', value='Выдать награждение пользователю')
+    emb.add_field(name='**!deprive**', value='Отобрать любое количество валюты') 
+    emb.add_field(name='**!leaderboard**', value='Посмотреть топ 10 сервера по балансу')
+    emb.add_field(name='**Ticket**', value='Вы так же можете открыть тикет в чате <#1299473325327777802>')
+    emb.set_footer(text="мяу")
 
+    message = await ctx.send(embed=emb)
 
-    await ctx.send(embed = emb,
-        components = [
-            disnake.ui.Button(style = disnake.ButtonStyle.grey, label = "Нужна помощь?", custom_id = "Нужна помощь?")
-        ],
-        )
+    # Добавляем реакции флагов
+    await message.add_reaction('🇺🇸')  # Флаг США
+    await message.add_reaction('🇷🇺')  # Флаг России
 
-    await ctx.message.add_reaction('✅')
+    # Сохраняем ID сообщения и пользователя для проверки
+    bot.help_message_id = message.id
+    bot.help_user_id = ctx.author.id
 
-@bot.listen("on_button_click")
-async def help_listener(inter: disnake.MessageInteraction):
-    if inter.component.custom_id not in ["Нужна помощь?"]:
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user.bot:  # Игнорируем реакции от ботов
         return
 
-    if inter.component.custom_id == "Нужна помощь?":
-        await inter.response.send_message("Contact <@650306540179292160>")
+    if reaction.message.id == getattr(bot, 'help_message_id', None) and user.id == getattr(bot, 'help_user_id', None):
+        if reaction.emoji == '🇺🇸':
+            # Переводим на английский
+            emb = disnake.Embed(title='**Server Command Navigation** :leaves:', color=0x95a5a6)
+            emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
+
+            emb.add_field(name='**!balance**', value='Check any user\'s balance')
+            emb.add_field(name='**!award**', value='Give an award to a user')
+            emb.add_field(name='**!deprive**', value='Revoke any amount of currency')
+            emb.add_field(name='**!leaderboard**', value='View the top 10 server balances')
+            emb.add_field(name='**Ticket**', value='You can also open a ticket in the chat <#1299473325327777802>')
+            emb.set_footer(text="meow")
+
+            # Обновляем сообщение
+            await reaction.message.edit(embed=emb)
+            await reaction.remove(user)
+
+        elif reaction.emoji == '🇷🇺':
+            # Переводим на русский
+            emb = disnake.Embed(title='**Навигация по командам сервера** :leaves:', color=0x95a5a6)
+            emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
+
+            emb.add_field(name='**!balance**', value='Проверить баланс любого пользователя')
+            emb.add_field(name='**!award**', value='Выдать награждение пользователю')
+            emb.add_field(name='**!deprive**', value='Отобрать любое количество валюты') 
+            emb.add_field(name='**!leaderboard**', value='Посмотреть топ 10 сервера по балансу')
+            emb.add_field(name='**Ticket**', value='Вы так же можете открыть тикет в чате <#1299473325327777802>')
+            emb.set_footer(text="мяу")
+
+            # Обновляем сообщение
+            await reaction.message.edit(embed=emb)
+            await reaction.remove(user)
 
 roles_shop = {
     "сок-rich": {"cost": 1000, "role_id": 1300142132576784506}
 }
 
-@bot.command()
-async def shop(ctx):
+@bot.slash_command(name="shop", description="Показать доступные роли для покупки")
+async def shop(interaction: disnake.ApplicationCommandInteraction):
     embed = disnake.Embed(title="Магазин ролей", description="Доступные роли для покупки")
-    print('[',date,']','Открыт магазин')
+    print('[', datetime.now(), ']', 'Открыт магазин')
     
     for role_name, role_info in roles_shop.items():
         embed.add_field(
@@ -369,7 +453,7 @@ async def shop(ctx):
             inline=False
         )
     
-    await ctx.send(embed=embed)
+    await interaction.send(embed=embed)
 
 @bot.command()
 async def buy(ctx, role_name: str = None):
@@ -517,12 +601,14 @@ async def refresh_ticket_button(): # Каждый 4 минут обновлен�
 
 @bot.event
 async def on_interaction(interaction):
+    if interaction.type == disnake.InteractionType.application_command:
+        return #если команда слеш то проверку не делаем в наш случае для команды /status
     try:
         # Closing the ticket
         if interaction.data['custom_id'].startswith('close_ticket-'):
             user_id = interaction.data['custom_id'].split('-')[1]
             
-            if interaction.user.id == int(user_id) or disnake.utils.get(interaction.user.roles, id=1300843105532117002):
+            if (interaction.user.id == int(user_id) or disnake.utils.get(interaction.user.roles, id=1300843105532117002) or interaction.user.guild_permissions.administrator):
                 channel = interaction.channel
                 role_name = f"Ticket-{user_id}"
                 role = disnake.utils.get(interaction.guild.roles, name=role_name)
@@ -583,17 +669,17 @@ async def on_interaction(interaction):
     except Exception as e:
         print(f"Ошибка в on_interaction: {e}")
 
-@bot.command()
+@bot.slash_command(name="status", description="Показать открытые тикеты")
 @commands.has_permissions(manage_channels=True)
-async def status(ctx): #Команда status
-    open_tickets = [channel for channel in ctx.guild.channels if channel.name.startswith('ticket-')]
-    
+async def status(interaction: disnake.AppCmdInter):
+    open_tickets = [channel for channel in interaction.guild.channels if channel.name.startswith('ticket-')]
+
     if not open_tickets:
-        await ctx.send("Нет открытых тикетов.")
+        await interaction.response.send_message("Нет открытых тикетов.")
         return
 
     status_message = "Открытые тикеты:\n" + "\n".join([f"{channel.mention} - {channel.name}" for channel in open_tickets])
-    await ctx.send(status_message)
+    await interaction.response.send_message(status_message)
 
 @bot.command()
 async def close(ctx, channel: disnake.TextChannel): #Команда close
@@ -614,5 +700,78 @@ async def close_error(ctx, error):
 async def status_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("У вас нет прав для просмотра тикетов.")
+
+@bot.command()
+async def connect(ctx):
+    #Перемещает бота в голосовой канал, где находится вызывающий пользователь.
+    if ctx.author.voice:
+        current_vc = ctx.voice_client
+        if current_vc:
+            await current_vc.move_to(ctx.author.voice.channel)
+        else:
+            channel_to_join = ctx.author.voice.channel
+            await channel_to_join.connect()
+            await ctx.send(f"Я подключился к вашему каналу: {channel_to_join.name}.")
+    else:
+        await ctx.send("Вы не находитесь в голосовом канале.")
+
+@bot.command()
+async def disconnect(ctx):
+    #Отключает бота от текущего голосового канала и возвращает его в изначальный.
+    if ctx.voice_client:
+        initial_channel = bot.get_channel(VOICE_CHANNEL_ID)
+        await ctx.voice_client.disconnect()
+        await initial_channel.connect()
+    else:
+        await ctx.send("Я не в голосовом канале.")
+
+@bot.command()
+async def say(ctx, *, text: str):
+    if ctx.voice_client:
+        # Создаем аудиофайл с помощью gTTS
+        tts = gTTS(text=text, lang='ru')
+        tts.save("temp_audio.mp3")
+
+        # Отправляем аудиофайл в голосовой канал
+        ctx.voice_client.play(disnake.FFmpegPCMAudio("temp_audio.mp3"))
+
+        # Удаляем временный файл после воспроизведения
+        while ctx.voice_client.is_playing():
+            await asyncio.sleep(1)
+        os.remove("temp_audio.mp3")
+    else:
+        await ctx.send("Я не подключен к голосовому каналу.")
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if after.channel is not None and before.channel is None:  # Пользователь подключился
+        if member.bot:  # Игнорируем, если это бот
+            return
+
+        # Получите голосовой канал, в который подключился пользователь
+        voice_client = disnake.utils.get(bot.voice_clients, guild=member.guild)
+        if voice_client is not None:
+            # Задержка на 1 секунду перед воспроизведением
+            await asyncio.sleep(1)
+
+            # Создаем аудиофайл с помощью gTTS
+            display_name = member.display_name  # Имя пользователя на сервере
+            text = f"Здравствуйте {display_name}, сосите!"
+            tts = gTTS(text=text, lang='ru')
+            tts.save("temp_audio.mp3")
+
+            # Воспроизводим аудиофайл
+            voice_client.play(disnake.FFmpegPCMAudio("temp_audio.mp3"))
+
+            # Ждем, пока аудио закончится воспроизводиться
+            while voice_client.is_playing():
+                await asyncio.sleep(1)
+
+            # Удаляем временный файл после воспроизведения
+            os.remove("temp_audio.mp3")
+
+@bot.event
+async def on_command_error(ctx, error):
+    await ctx.send(f'Произошла ошибка: {error}')
 
 bot.run(settings['token'])
