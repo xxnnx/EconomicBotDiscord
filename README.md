@@ -33,7 +33,7 @@
    ```
 
 
-## Если сделали все удачно, в терминале (start.bat) будет сообщение
+### Если сделали все удачно, в терминале (start.bat) будет сообщение
 ![image](https://github.com/user-attachments/assets/49b8563f-bed0-45fc-a94c-1ed3097f0715)
 
 
