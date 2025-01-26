@@ -1,6 +1,7 @@
 import disnake
 from disnake.ext import commands, tasks
 from disnake.ui import Button, View, Select, Modal, TextInput
+from disnake import File
 
 from gtts import gTTS
 import asyncio
@@ -24,6 +25,17 @@ bot.remove_command('help')
 
 connection = sqlite3.connect('server.db')
 cursor = connection.cursor()
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    message_content TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
+connection.commit()
 
 # Словарь для хранения времени нахождения пользователя в голосовом чате
 voice_time_tracking = {}
@@ -122,7 +134,7 @@ async def on_ready():
                 pass
 
     connection.commit()
-    await bot.change_presence(activity = disnake.Activity(name = f'!help 👨‍⚖️', type = disnake.ActivityType.listening))
+    await bot.change_presence(activity = disnake.Activity(name = f'!help', type = disnake.ActivityType.listening))
 
 @bot.event
 async def on_member_join(member):
@@ -131,6 +143,17 @@ async def on_member_join(member):
         connection.commit()
     else:
         pass
+
+@bot.event
+async def on_message(message):
+    # Проверяем, что сообщение пришло из нужного канала
+    if message.channel.id == 667378391753949189:
+        # Регистрируем сообщение пользователя в базе данных
+        cursor.execute(f"INSERT INTO messages (user_id, message_content) VALUES (?, ?)",
+                       (message.author.id, message.content))
+        connection.commit()
+    # Убедимся, что другие команды тоже обрабатываются
+    await bot.process_commands(message)
 
 @tasks.loop(minutes=reward_interval_minutes)
 async def reward_voice_chat_users():
@@ -150,7 +173,7 @@ async def reward_voice_chat_users():
 
     print(f"[{current_time}] Начислены листики за голосовой чат")
 
-#Код кнопки просмотра баланса
+# Создаем команду для просмотра баланса
 @bot.command(aliases=['balance'])
 async def __balance(ctx, member: disnake.Member = None):
     if member is None:
@@ -174,15 +197,12 @@ async def __balance(ctx, member: disnake.Member = None):
         draw = ImageDraw.Draw(avatar_image)
         draw.text((10, 40), "No Avatar", fill=(255, 255, 255))
 
-    # Получаем данные пользователя
     user_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (member.id,)).fetchone()[0]
     user_name = str(member)
 
-    # Создаем основное изображение
-    width, height = 400, 200
-    background_color = (30, 30, 30)
-    text_color = (255, 255, 255)
-    img = Image.new("RGB", (width, height), color=background_color)
+    background_image = Image.open("balance.jpg")
+    background_image = background_image.resize((400, 200))
+    img = background_image
     draw = ImageDraw.Draw(img)
 
     try:
@@ -190,13 +210,21 @@ async def __balance(ctx, member: disnake.Member = None):
     except IOError:
         font = ImageFont.load_default()
 
-    # Вставляем круглую аватарку и текст
     img.paste(avatar_image, (20, 55), avatar_image)
-    text_balance = f"Баланс: {user_balance} 🍃"
-    text_user = f"Пользователь: {user_name}"
+
+    text_balance = f"{user_balance} 🍃"
+    text_user = f"{user_name}"
+
+    # Получаем размеры текста для правильного выравнивания
+    text_user_width, text_user_height = draw.textbbox((0, 0), text_user, font=font)[2:4]
+    text_balance_width, text_balance_height = draw.textbbox((0, 0), text_balance, font=font)[2:4]
+
+    user_x = (img.width - text_user_width) // 2 + 50
+    balance_x = (img.width - text_balance_width) // 2 + 72
+
     with Pilmoji(img) as pilmoji:
-        pilmoji.text((150, 55), text_user, fill=text_color, font=font)
-        pilmoji.text((150, 130), text_balance, fill=text_color, font=font)
+        pilmoji.text((user_x, 55), text_user, fill=(30, 30, 30), font=font)
+        pilmoji.text((balance_x, 130), text_balance, fill=(30, 30, 30), font=font)
 
     # Сохраняем изображение в байтовый поток
     buffer = io.BytesIO()
@@ -254,13 +282,11 @@ async def open_transfer_menu(interaction):
     # Создаем выпадающее меню с пользователями сервера
     select_menu = Select(
         placeholder="Выберите пользователя для перевода",
-        options=[
-            disnake.SelectOption(label=member.display_name, value=str(member.id))
-            for member in members
-        ]
+        options=[disnake.SelectOption(label=member.display_name, value=str(member.id))
+                 for member in members]
     )
 
-    async def select_callback(interaction):
+    async def select_callback(interaction: disnake.MessageInteraction):
         # Проверяем, что взаимодействует только автор команды
         if interaction.user.id != author_id:
             await interaction.response.send_message("Вы не можете использовать это меню.", ephemeral=True)
@@ -277,12 +303,11 @@ async def open_transfer_menu(interaction):
     await interaction.response.send_message("Выберите пользователя для перевода:", view=view)
 
 # Функция для запроса суммы перевода
-async def request_transfer_amount(interaction, selected_user_id):
+async def request_transfer_amount(interaction: disnake.MessageInteraction, selected_user_id: int):
     # Создаем модальное окно для ввода суммы
-    class TransferModal(Modal):
+    class TransferModal(disnake.ui.Modal):
         def __init__(self):
-            # Создаем поле для ввода суммы перевода с уникальным `custom_id`
-            amount_input = TextInput(
+            amount_input = disnake.ui.TextInput(
                 label="Сумма", 
                 placeholder="Введите сумму", 
                 required=True, 
@@ -292,7 +317,7 @@ async def request_transfer_amount(interaction, selected_user_id):
             super().__init__(title="Введите сумму перевода", components=[amount_input])
             self.amount_input = amount_input
 
-        async def callback(self, interaction):
+        async def callback(self, interaction: disnake.MessageInteraction):
             # Используем interaction.text_values для получения значения
             transfer_amount_str = interaction.text_values["transfer_amount_input"]
             if transfer_amount_str.isdigit():
@@ -315,7 +340,7 @@ async def request_transfer_amount(interaction, selected_user_id):
     await interaction.response.send_modal(modal)
 
 # Функция для отображения магазина
-async def show_shop(interaction):
+async def show_shop(interaction: disnake.MessageInteraction):
     embed = disnake.Embed(title="Магазин ролей", description="Доступные роли для покупки")
     
     for role_name, role_info in roles_shop.items():
@@ -377,6 +402,41 @@ async def __leaderboard(ctx):
 
     await ctx.send(embed = embed)
 
+@bot.command(aliases=["profile"])
+async def user_profile(ctx, member: disnake.Member = None):
+    if member is None:
+        member = ctx.author
+
+    # Получаем баланс и количество сообщений
+    user_balance = cursor.execute("SELECT cash FROM users WHERE id = ?", (member.id,)).fetchone()[0]
+    message_count = cursor.execute("SELECT COUNT(*) FROM messages WHERE user_id = ?", (member.id,)).fetchone()[0]
+
+    # Получаем аватар пользователя
+    avatar_bytes = await member.avatar.read()
+    avatar_image = Image.open(io.BytesIO(avatar_bytes))
+    avatar_image = avatar_image.resize((100, 100))
+
+    place = cursor.execute("SELECT COUNT(*) FROM users WHERE cash > ? AND server_id = ?", (user_balance, ctx.guild.id)).fetchone()[0] + 1
+
+    # Получаем роли пользователя
+    roles = [role.mention for role in member.roles if role != ctx.guild.default_role]  # Исключаем @everyone роль
+
+    # Если у пользователя нет ролей, выводим сообщение
+    roles_string = ", ".join(roles) if roles else "Нет ролей"
+
+    # Создаем Embed с профилем
+    embed = disnake.Embed(title=f"Профиль: ***{member.display_name}***", description=f"Баланс: {user_balance} 🍃")
+    embed.add_field(name="Сообщений отправлено", value=str(message_count), inline=False)
+    embed.add_field(name="Место в лидерборде", value=f"#{place}", inline=False)
+    embed.add_field(name="Роли:", value=roles_string, inline=False)
+    
+    # Вставляем аватарку
+    avatar_url = member.avatar.url
+    embed.set_thumbnail(url=avatar_url)
+
+    # Отправляем Embed
+    msg = await ctx.send(embed=embed)
+
 @bot.command(pass_context=True)
 async def help(ctx):
     emb = disnake.Embed(title='**Навигация по командам сервера** :leaves:', color=0x95a5a6)
@@ -387,6 +447,7 @@ async def help(ctx):
     emb.add_field(name='**!deprive**', value='Отобрать любое количество валюты') 
     emb.add_field(name='**!leaderboard**', value='Посмотреть топ 10 сервера по балансу')
     emb.add_field(name='**Ticket**', value='Вы так же можете открыть тикет в чате <#1299473325327777802>')
+    emb.add_field(name='**!profile**', value='Посмотерть профиль пользователя')
     emb.set_footer(text="мяу")
 
     message = await ctx.send(embed=emb)
@@ -404,48 +465,57 @@ async def on_reaction_add(reaction, user):
     if user.bot:  # Игнорируем реакции от ботов
         return
 
-    if reaction.message.id == getattr(bot, 'help_message_id', None) and user.id == getattr(bot, 'help_user_id', None):
-        if reaction.emoji == '🇺🇸':
-            # Переводим на английский
-            emb = disnake.Embed(title='**Server Command Navigation** :leaves:', color=0x95a5a6)
-            emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
+    if reaction.emoji == '🇺🇸':
+        # Переводим на английский
+        emb = disnake.Embed(title='**Server Command Navigation** :leaves:', color=0x95a5a6)
+        emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
 
-            emb.add_field(name='**!balance**', value='Check any user\'s balance')
-            emb.add_field(name='**!award**', value='Give an award to a user')
-            emb.add_field(name='**!deprive**', value='Revoke any amount of currency')
-            emb.add_field(name='**!leaderboard**', value='View the top 10 server balances')
-            emb.add_field(name='**Ticket**', value='You can also open a ticket in the chat <#1299473325327777802>')
-            emb.set_footer(text="meow")
+        emb.add_field(name='**!balance**', value='Check any user\'s balance')
+        emb.add_field(name='**!award**', value='Give an award to a user')
+        emb.add_field(name='**!deprive**', value='Revoke any amount of currency')
+        emb.add_field(name='**!leaderboard**', value='View the top 10 server balances')
+        emb.add_field(name='**Ticket**', value='You can also open a ticket in the chat <#1299473325327777802>')
+        emb.add_field(name='**!profile**', value='Check profile')
+    
+        emb.set_footer(text="meow")
 
-            # Обновляем сообщение
-            await reaction.message.edit(embed=emb)
-            await reaction.remove(user)
+        # Обновляем сообщение
+        await reaction.message.edit(embed=emb)
+        await reaction.remove(user)
 
-        elif reaction.emoji == '🇷🇺':
-            # Переводим на русский
-            emb = disnake.Embed(title='**Навигация по командам сервера** :leaves:', color=0x95a5a6)
-            emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
+    elif reaction.emoji == '🇷🇺':
+        # Переводим на русский
+        emb = disnake.Embed(title='**Навигация по командам сервера** :leaves:', color=0x95a5a6)
+        emb.set_author(name=bot.user.name, icon_url=bot.user.avatar)
 
-            emb.add_field(name='**!balance**', value='Проверить баланс любого пользователя')
-            emb.add_field(name='**!award**', value='Выдать награждение пользователю')
-            emb.add_field(name='**!deprive**', value='Отобрать любое количество валюты') 
-            emb.add_field(name='**!leaderboard**', value='Посмотреть топ 10 сервера по балансу')
-            emb.add_field(name='**Ticket**', value='Вы так же можете открыть тикет в чате <#1299473325327777802>')
-            emb.set_footer(text="мяу")
+        emb.add_field(name='**!balance**', value='Проверить баланс любого пользователя')
+        emb.add_field(name='**!award**', value='Выдать награждение пользователю')
+        emb.add_field(name='**!deprive**', value='Отобрать любое количество валюты') 
+        emb.add_field(name='**!leaderboard**', value='Посмотреть топ 10 сервера по балансу')
+        emb.add_field(name='**Ticket**', value='Вы так же можете открыть тикет в чате <#1299473325327777802>')
+        emb.add_field(name='**!profile**', value='Посмотерть профиль пользователя')
+        emb.set_footer(text="мяу")
 
-            # Обновляем сообщение
-            await reaction.message.edit(embed=emb)
-            await reaction.remove(user)
+        # Обновляем сообщение
+        await reaction.message.edit(embed=emb)
+        await reaction.remove(user)
 
 roles_shop = {
-    "сок-rich": {"cost": 1000, "role_id": 1300142132576784506}
+    "сок-rich": {"cost": 1000, "role_id": 1300142132576784506},
+    "пикми": {"cost": 10000, "role_id": 1332767211219189770} 
 }
+
 
 @bot.slash_command(name="shop", description="Показать доступные роли для покупки")
 async def shop(interaction: disnake.ApplicationCommandInteraction):
+    await interaction.response.defer()  # Откладываем ответ
+
+    # Создаем Embed с ролями
     embed = disnake.Embed(title="Магазин ролей", description="Доступные роли для покупки")
-    print('[', datetime.now(), ']', 'Открыт магазин')
-    
+
+    embed.set_thumbnail(url="attachment://icon.gif")
+
+    # Добавляем роли
     for role_name, role_info in roles_shop.items():
         embed.add_field(
             name=role_name,
@@ -453,7 +523,14 @@ async def shop(interaction: disnake.ApplicationCommandInteraction):
             inline=False
         )
     
-    await interaction.send(embed=embed)
+    # Локальные файлы
+    icon_file = File("icon.gif", filename="icon.gif")   # Локальная GIF-иконка
+
+    # Отправляем файл и Embed в одном сообщении
+    await interaction.edit_original_response(
+        files=[icon_file],  # Локальные файлы
+        embed=embed                    # Embed с ролями
+    )
 
 @bot.command()
 async def buy(ctx, role_name: str = None):
